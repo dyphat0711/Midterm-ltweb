@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (textEl && badgeEl) {
             if (appSettings.modelMode === 'Gemini') {
-                textEl.innerText = 'Gemini 1.5 lai';
+                textEl.innerText = 'Gemini Flash lai';
                 badgeEl.style.borderColor = 'rgba(168, 85, 247, 0.4)';
                 badgeEl.style.color = 'var(--neon-purple)';
                 badgeEl.style.background = 'rgba(168, 85, 247, 0.1)';
@@ -111,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // AI Workspace-specific elements
         const modeTextEl = document.getElementById('model-mode-text');
         if (modeTextEl) {
-            modeTextEl.innerText = appSettings.modelMode === 'Gemini' ? 'Gemini 1.5 Flash đang bật' : 'Trình mô phỏng TF.js offline';
+            modeTextEl.innerText = appSettings.modelMode === 'Gemini' ? 'Gemini Flash đang bật' : 'Trình mô phỏng TF.js offline';
             modeTextEl.style.color = appSettings.modelMode === 'Gemini' ? 'var(--neon-purple)' : 'var(--neon-cyan)';
         }
 
@@ -344,7 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Client-side PDF Text Ingestion Parser using PDF.js CDN
-        async function parsePdfClientSide(file) {
+        async function parsePdfClientSide(file, onProgress) {
             const reader = new FileReader();
             return new Promise((resolve, reject) => {
                 reader.onload = async function() {
@@ -362,6 +362,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             const textContent = await page.getTextContent();
                             const pageText = textContent.items.map(item => item.str).join(' ');
                             fullText += pageText + '\n\n';
+                            
+                            if (typeof onProgress === 'function') {
+                                const percent = Math.round((pageNum / pdf.numPages) * 100);
+                                onProgress(percent, pageNum, pdf.numPages);
+                            }
                         }
                         
                         resolve(fullText.trim());
@@ -388,22 +393,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            // Render loading status
+            // Render loading status with custom glowing glassmorphic progress bar
             dropzone.innerHTML = `
                 <div class="pulse-indicator" style="margin-bottom: 8px;"></div>
-                <h4 style="color:white;" id="upload-status-title">Đang tải "${file.name}"...</h4>
+                <h4 style="color:white; margin-bottom: 4px;" id="upload-status-title">Đang tải "${file.name}"...</h4>
+                
+                <div class="upload-progress-container" style="width: 100%; max-width: 280px; margin: 14px auto 4px auto; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 9999px; height: 8px; overflow: hidden; position: relative;">
+                    <div id="upload-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple)); box-shadow: var(--glow-cyan); transition: width 0.1s ease-out; border-radius: 9999px;"></div>
+                </div>
+                <div id="upload-progress-percent" style="font-size: 13px; font-weight: 600; color: var(--neon-cyan); margin-bottom: 8px;">0%</div>
+
                 <p style="color:#64748b; font-size:11px;" id="upload-status-desc">Đang khởi tạo bộ đọc...</p>
             `;
 
+            const progressBar = document.getElementById('upload-progress-bar');
+            const progressPercent = document.getElementById('upload-progress-percent');
+            const statusTitle = document.getElementById('upload-status-title');
+            const statusDesc = document.getElementById('upload-status-desc');
+
+            const updateProgressBar = (percent) => {
+                if (progressBar) progressBar.style.width = `${percent}%`;
+                if (progressPercent) progressPercent.innerText = `${percent}%`;
+            };
+
             try {
                 if (ext === 'pdf') {
-                    const statusTitleEl = document.getElementById('upload-status-title');
-                    const statusDescEl = document.getElementById('upload-status-desc');
-                    if (statusTitleEl) statusTitleEl.innerText = `Đang đọc "${file.name}" trên trình duyệt...`;
-                    if (statusDescEl) statusDescEl.innerText = `Đang trích xuất văn bản bằng PDF.js worker`;
+                    if (statusTitle) statusTitle.innerText = `Đang đọc "${file.name}" trên trình duyệt...`;
+                    if (statusDesc) statusDesc.innerText = `Đang khởi động PDF.js worker...`;
 
-                    // Parse client side
-                    const parsedText = await parsePdfClientSide(file);
+                    // Parse client side with real-time extraction progress updates
+                    const parsedText = await parsePdfClientSide(file, (percent, page, total) => {
+                        updateProgressBar(percent);
+                        if (statusDesc) {
+                            statusDesc.innerText = `Đang trích xuất trang ${page} / ${total} (${percent}%)`;
+                        }
+                    });
                     
                     if (!parsedText || parsedText.trim() === '') {
                         throw new Error("Nội dung PDF rỗng hoặc chỉ chứa hình ảnh.");
@@ -414,8 +438,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     formData.append('title', file.name.replace(/\.[^/.]+$/, "")); // strip extension
                     formData.append('content', parsedText);
 
-                    if (statusTitleEl) statusTitleEl.innerText = `Đang lập chỉ mục các đoạn...`;
-                    if (statusDescEl) statusDescEl.innerText = `Đang chia văn bản và ghi vào chỉ mục cục bộ`;
+                    if (statusTitle) statusTitle.innerText = `Đang lập chỉ mục...`;
+                    if (statusDesc) statusDesc.innerText = `Đang chia nhỏ văn bản thành các đoạn vector & ghi vào MySQL...`;
 
                     const response = await fetch(`${URL_ROOT}/api/upload`, {
                         method: 'POST',
@@ -423,13 +447,49 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const data = await response.json();
                     if (data.success) {
-                        location.reload();
+                        updateProgressBar(100);
+                        if (statusDesc) statusDesc.innerText = `Lập chỉ mục hoàn tất! Đang làm mới trang...`;
+                        setTimeout(() => {
+                            location.reload();
+                        }, 500);
                     } else {
                         alert('Tải lên thất bại: ' + data.error);
                         location.reload();
                     }
                 } else {
-                    // Normal TXT, MD, CSV, DOCX files parsed on backend
+                    // Normal TXT, MD, CSV, JSON, DOCX files
+                    // Simulate a sleek, smooth progress progression over 350ms to keep a premium, interactive UX feel
+                    if (statusTitle) statusTitle.innerText = `Đang đọc "${file.name}"...`;
+                    if (statusDesc) statusDesc.innerText = `Đang đọc dữ liệu nhị phân...`;
+
+                    let currentPercent = 0;
+                    const duration = 350; // ms
+                    const intervalStep = 15; // ms
+                    const increment = 100 / (duration / intervalStep);
+
+                    const simulatedProgress = () => {
+                        return new Promise((resolve) => {
+                            const interval = setInterval(() => {
+                                currentPercent += increment;
+                                if (currentPercent >= 100) {
+                                    currentPercent = 100;
+                                    updateProgressBar(100);
+                                    if (statusDesc) statusDesc.innerText = `Hoàn tất đọc! Đang truyền tải gói dữ liệu...`;
+                                    clearInterval(interval);
+                                    setTimeout(resolve, 50);
+                                } else {
+                                    updateProgressBar(Math.round(currentPercent));
+                                    if (statusDesc) statusDesc.innerText = `Đang xử lý cấu trúc file (${Math.round(currentPercent)}%)`;
+                                }
+                            }, intervalStep);
+                        });
+                    };
+
+                    await simulatedProgress();
+
+                    if (statusTitle) statusTitle.innerText = `Đang gửi lên máy chủ...`;
+                    if (statusDesc) statusDesc.innerText = `Đang lưu trữ & chia các đoạn ngữ nghĩa vào CSDL...`;
+
                     const formData = new FormData();
                     formData.append('file', file);
                     
@@ -439,7 +499,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     const data = await response.json();
                     if (data.success) {
-                        location.reload();
+                        if (statusDesc) statusDesc.innerText = `Nhập tài liệu thành công! Đang làm mới trang...`;
+                        setTimeout(() => {
+                            location.reload();
+                        }, 500);
                     } else {
                         alert('Tải lên thất bại: ' + data.error);
                         location.reload();
@@ -577,6 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 1. Fetch History from SQLite
         loadChatLogs();
+        loadChatRagChunks();
 
         // 2. Real-Time Keystroke Sentiment Analyzer
         if (chatInput) {
@@ -618,11 +682,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. Send message
         if (sendBtn) {
             sendBtn.addEventListener('click', triggerSendMessage);
+            sendBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                triggerSendMessage();
+            });
         }
 
         if (chatInput) {
             chatInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
+                    e.preventDefault();
                     triggerSendMessage();
                 }
             });
@@ -638,6 +707,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
             });
+        }
+
+        function loadChatRagChunks() {
+            if (!appSettings.ragEnabled) return;
+
+            fetch(`${URL_ROOT}/api/chunks`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        rag.setChunks(data.chunks);
+                    }
+                })
+                .catch(err => console.error('Khong the nap kho tri thuc RAG:', err));
         }
 
         // 4. Custom Local Browser NN Trainer
@@ -947,6 +1029,45 @@ document.addEventListener('DOMContentLoaded', () => {
     function initVisualizerView() {
         visualizer = new VectorSpaceVisualizer('physics-canvas');
         visualizer.start();
+
+        // Bind zoom UI buttons (Proposal 3)
+        const zoomInBtn = document.getElementById('zoom-in-btn');
+        const zoomOutBtn = document.getElementById('zoom-out-btn');
+        const zoomResetBtn = document.getElementById('zoom-reset-btn');
+        const zoomPercent = document.getElementById('zoom-percent');
+
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', () => {
+                visualizer.scale = Math.min(4.0, visualizer.scale + 0.15);
+                updateZoomPercent();
+            });
+        }
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', () => {
+                visualizer.scale = Math.max(0.3, visualizer.scale - 0.15);
+                updateZoomPercent();
+            });
+        }
+        if (zoomResetBtn) {
+            zoomResetBtn.addEventListener('click', () => {
+                visualizer.scale = 1.0;
+                visualizer.pan = { x: 0, y: 0 };
+                updateZoomPercent();
+            });
+        }
+
+        // Listen for standard mouse wheel changes inside the canvas to keep percent indicator in sync
+        window.addEventListener('canvasZoomed', (e) => {
+            if (zoomPercent) {
+                zoomPercent.innerText = Math.round(e.detail.scale * 100) + '%';
+            }
+        });
+
+        function updateZoomPercent() {
+            if (zoomPercent) {
+                zoomPercent.innerText = Math.round(visualizer.scale * 100) + '%';
+            }
+        }
 
         const searchInput = document.getElementById('visualizer-search-input');
         const searchBtn = document.getElementById('visualizer-search-btn');

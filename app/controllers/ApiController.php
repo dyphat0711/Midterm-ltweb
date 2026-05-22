@@ -62,13 +62,22 @@ class ApiController extends Controller {
                     $ragPayload['citations'] = implode(', ', array_unique($docCitations));
                 }
             }
+
+            if ($ragEnabled && empty($ragPayload['matches'])) {
+                $ragPayload = $this->getRagContext($userMessage);
+            }
+
             $ragContext = $ragPayload['text'];
             $ragCitations = $ragPayload['citations'];
 
-            // Fetch Gemini API Key if online mode
+            // Fetch Gemini API Key if online mode (supports client key, defined constant, or server env variables)
             $apiKey = '';
             if ($modelMode === 'Gemini') {
-                $apiKey = !empty($clientApiKey) ? $clientApiKey : (defined('GEMINI_API_KEY') ? GEMINI_API_KEY : '');
+                $apiKey = !empty($clientApiKey) 
+                    ? $clientApiKey 
+                    : (defined('GEMINI_API_KEY') 
+                        ? GEMINI_API_KEY 
+                        : (getenv('GEMINI_API_KEY') ?: ($_ENV['GEMINI_API_KEY'] ?? '')));
                 if (empty($apiKey)) {
                     $modelMode = 'Offline Simulation (Fallback)';
                 }
@@ -373,7 +382,7 @@ class ApiController extends Controller {
      * Query Google Gemini API using native PHP cURL
      */
     private function queryGemini($prompt, $apiKey, $ragContext = '', $customSystemInstruction = '') {
-        $url = "https://generativelanguage.googleapis.com/" . GEMINI_API_VERSION . "/models/" . GEMINI_MODEL . ":generateContent?key=" . $apiKey;
+        $url = "https://generativelanguage.googleapis.com/" . GEMINI_API_VERSION . "/models/" . GEMINI_MODEL . ":generateContent";
 
         // Retrieve last 8 messages from chat log for conversation context
         $recentChats = $this->chatModel->getHistory(10);
@@ -415,7 +424,10 @@ class ApiController extends Controller {
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'X-goog-api-key: ' . $apiKey
+        ]);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -457,7 +469,7 @@ class ApiController extends Controller {
         $scored = [];
 
         foreach ($chunks as $chunk) {
-            $content = mb_strtolower($chunk->content, 'UTF-8');
+            $content = $this->normalizeForRag(($chunk->document_title ?? '') . ' ' . $chunk->content);
             $hits = 0;
             foreach ($tokens as $token) {
                 $hits += substr_count($content, $token);
@@ -509,11 +521,33 @@ class ApiController extends Controller {
     }
 
     private function tokenizeForRag($text) {
-        $parts = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text, 'UTF-8'));
+        $parts = preg_split('/[^a-z0-9]+/', $this->normalizeForRag($text));
         $stopWords = ['the', 'and', 'for', 'that', 'this', 'with', 'from', 'của', 'và', 'là', 'có', 'cho', 'một', 'các', 'những', 'trong', 'thì', 'mà', 'đã', 'đang', 'sẽ', 'bị', 'được', 'như', 'nhưng', 'cũng', 'để'];
+        $stopWords = array_merge($stopWords, ['cua', 'va', 'la', 'co', 'cho', 'mot', 'cac', 'nhung', 'trong', 'thi', 'ma', 'da', 'dang', 'se', 'bi', 'duoc', 'nhu', 'cung', 'de', 'nuoc']);
         return array_values(array_unique(array_filter($parts, function($token) use ($stopWords) {
-            return mb_strlen($token, 'UTF-8') > 1 && !in_array($token, $stopWords);
+            return strlen($token) > 1 && !in_array($token, $stopWords);
         })));
+    }
+
+    private function normalizeForRag($text) {
+        $text = mb_strtolower((string)$text, 'UTF-8');
+
+        if (class_exists('Normalizer')) {
+            $text = Normalizer::normalize($text, Normalizer::FORM_D);
+            $text = preg_replace('/\p{Mn}+/u', '', $text);
+        } else {
+            $map = [
+                'à'=>'a','á'=>'a','ạ'=>'a','ả'=>'a','ã'=>'a','â'=>'a','ầ'=>'a','ấ'=>'a','ậ'=>'a','ẩ'=>'a','ẫ'=>'a','ă'=>'a','ằ'=>'a','ắ'=>'a','ặ'=>'a','ẳ'=>'a','ẵ'=>'a',
+                'è'=>'e','é'=>'e','ẹ'=>'e','ẻ'=>'e','ẽ'=>'e','ê'=>'e','ề'=>'e','ế'=>'e','ệ'=>'e','ể'=>'e','ễ'=>'e',
+                'ì'=>'i','í'=>'i','ị'=>'i','ỉ'=>'i','ĩ'=>'i',
+                'ò'=>'o','ó'=>'o','ọ'=>'o','ỏ'=>'o','õ'=>'o','ô'=>'o','ồ'=>'o','ố'=>'o','ộ'=>'o','ổ'=>'o','ỗ'=>'o','ơ'=>'o','ờ'=>'o','ớ'=>'o','ợ'=>'o','ở'=>'o','ỡ'=>'o',
+                'ù'=>'u','ú'=>'u','ụ'=>'u','ủ'=>'u','ũ'=>'u','ư'=>'u','ừ'=>'u','ứ'=>'u','ự'=>'u','ử'=>'u','ữ'=>'u',
+                'ỳ'=>'y','ý'=>'y','ỵ'=>'y','ỷ'=>'y','ỹ'=>'y','đ'=>'d'
+            ];
+            $text = strtr($text, $map);
+        }
+
+        return str_replace('đ', 'd', $text);
     }
 
     /**

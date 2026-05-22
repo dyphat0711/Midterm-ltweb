@@ -74,7 +74,15 @@
         <div class="visualizer-overlay">
             <div style="font-weight: 600; color: white;">Bộ mô phỏng tọa độ vector</div>
             <div style="color: #64748b; font-size: 10px;" id="visualizer-stats-nodecount">Node: 0 | Lò xo: 0</div>
-            <div style="color: #64748b; font-size: 10px;">Kéo node để thử lực giảm chấn.</div>
+            <div style="color: #64748b; font-size: 10px; margin-bottom: 8px;">Kéo node để thử lực giảm chấn.</div>
+            
+            <!-- Zoom Controls (Proposal 3) -->
+            <div style="display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--glass-border); padding-top: 8px; margin-top: 2px;">
+                <button class="badge cyan" id="zoom-in-btn" style="cursor: pointer; padding: 2px 6px; border: 1px solid rgba(6, 182, 212, 0.3); outline: none;" title="Phóng to">Zoom +</button>
+                <button class="badge cyan" id="zoom-out-btn" style="cursor: pointer; padding: 2px 6px; border: 1px solid rgba(6, 182, 212, 0.3); outline: none;" title="Thu nhỏ">Zoom -</button>
+                <button class="badge" id="zoom-reset-btn" style="cursor: pointer; padding: 2px 6px; border: 1px solid var(--glass-border); color: #94a3b8; background: transparent; outline: none;" title="Đặt lại về mặc định">Reset</button>
+                <span style="color: #94a3b8; font-size: 10px; font-weight: 600; margin-left: 4px;" id="zoom-percent">100%</span>
+            </div>
         </div>
 
         <!-- Hop truy van vector -->

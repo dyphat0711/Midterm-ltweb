@@ -89,6 +89,14 @@
 
         <!-- NOI DUNG CHINH -->
         <main class="main-content">
+            <?php if (defined('MYSQL_FALLBACK_ACTIVE') && MYSQL_FALLBACK_ACTIVE): ?>
+                <div class="db-fallback-banner">
+                    <span class="banner-icon">⚠️</span>
+                    <span class="banner-text">
+                        <strong>Chế độ dự phòng hoạt động:</strong> Không thể kết nối tới cơ sở dữ liệu MySQL trên XAMPP (Cổng 3306). Hệ thống đã tự động chuyển sang cơ sở dữ liệu di động **JSON**. Hãy khởi động MySQL trên XAMPP và tải lại trang để đồng bộ và chuyển về cơ sở dữ liệu hiệu năng cao!
+                    </span>
+                </div>
+            <?php endif; ?>
             <?php echo $content; ?>
         </main>
         
@@ -117,7 +125,7 @@
                 <label class="form-label">Chế độ mô hình AI</label>
                 <select class="form-input" id="settings-model-mode" style="width: 100%;">
                     <option value="Offline Simulation">ML cục bộ offline (TensorFlow.js + mô phỏng)</option>
-                    <option value="Gemini">AI cloud lai (Google Gemini 1.5 Flash)</option>
+                    <option value="Gemini">AI cloud lai (Google Gemini Flash)</option>
                 </select>
             </div>
 

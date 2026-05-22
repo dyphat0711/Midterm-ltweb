@@ -78,13 +78,21 @@ class RagEngine {
      * Returns sorted chunks list with similarity coefficients
      */
     async search(queryText) {
-        if (!this.isReady || !queryText || this.chunks.length === 0) {
+        if (!queryText || this.chunks.length === 0) {
             return [];
+        }
+
+        if (!this.isReady || !this.model) {
+            return this.keywordSearch(queryText);
         }
 
         // Make sure embeddings exist before searching
         if (!this.chunks[0].embedding) {
             await this.buildEmbeddings();
+        }
+
+        if (!this.chunks[0].embedding) {
+            return this.keywordSearch(queryText);
         }
 
         // 1. Embed the query
@@ -131,5 +139,60 @@ class RagEngine {
         return results
             .filter(r => r.score > 0.15)
             .sort((a, b) => b.score - a.score);
+    }
+
+    keywordSearch(queryText) {
+        const queryTokens = this.tokenize(queryText);
+        if (queryTokens.length === 0) return [];
+
+        return this.chunks
+            .map(chunk => {
+                const haystack = this.normalizeText(`${chunk.document_title || ''} ${chunk.content || ''}`);
+                let hits = 0;
+
+                queryTokens.forEach(token => {
+                    let fromIndex = 0;
+                    while (fromIndex < haystack.length) {
+                        const foundAt = haystack.indexOf(token, fromIndex);
+                        if (foundAt === -1) break;
+                        hits += 1;
+                        fromIndex = foundAt + token.length;
+                    }
+                });
+
+                if (hits === 0) return null;
+
+                return {
+                    chunk_id: chunk.id,
+                    document_id: chunk.document_id,
+                    document_title: chunk.document_title,
+                    chunk_index: chunk.chunk_index,
+                    content: chunk.content,
+                    score: parseFloat(Math.min(1, hits / Math.max(3, queryTokens.length * 3)).toFixed(4))
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => b.score - a.score);
+    }
+
+    tokenize(text) {
+        const stopWords = new Set([
+            'the', 'and', 'for', 'that', 'this', 'with', 'from',
+            'cua', 'va', 'la', 'co', 'cho', 'mot', 'cac', 'nhung',
+            'trong', 'thi', 'ma', 'da', 'dang', 'se', 'bi', 'duoc',
+            'nhu', 'nhung', 'cung', 'de', 'nuoc'
+        ]);
+
+        return [...new Set(this.normalizeText(text)
+            .split(/[^a-z0-9]+/g)
+            .filter(token => token.length > 1 && !stopWords.has(token)))];
+    }
+
+    normalizeText(text) {
+        return String(text || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/đ/g, 'd');
     }
 }

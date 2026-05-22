@@ -7,11 +7,118 @@
 
 class Database {
     private static $instance = null;
+    
+    // MySQL native PDO instance
+    private $pdo = null;
+    
+    // JSON Mode variables
     private $dbFile;
     private $data = [];
     public $lastId = 0;
 
     private function __construct() {
+        if (defined('DB_TYPE') && DB_TYPE === 'mysql') {
+            try {
+                $this->initMysqlConnection();
+            } catch (Exception $e) {
+                // Activate fallback flag so layout views can render a sleek warning banner
+                if (!defined('MYSQL_FALLBACK_ACTIVE')) {
+                    define('MYSQL_FALLBACK_ACTIVE', true);
+                    define('MYSQL_ERROR_MSG', $e->getMessage());
+                }
+                $this->initJsonConnection();
+            }
+        } else {
+            $this->initJsonConnection();
+        }
+    }
+
+    private function initMysqlConnection() {
+        $host = DB_HOST;
+        $user = DB_USER;
+        $pass = DB_PASS;
+        $name = DB_NAME;
+        $port = DB_PORT;
+
+        try {
+            // Connect to MySQL server first (without database selection)
+            $this->pdo = new PDO("mysql:host={$host};port={$port}", $user, $pass);
+            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            
+            // Create database if not exists
+            $this->pdo->exec("CREATE DATABASE IF NOT EXISTS `{$name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            
+            // Connect to the specific database
+            $this->pdo = new PDO("mysql:host={$host};port={$port};dbname={$name};charset=utf8mb4", $user, $pass);
+            $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $this->pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_OBJ);
+            
+            // Initialize tables if they don't exist
+            $this->initMysqlTables();
+        } catch (PDOException $e) {
+            throw new Exception("Lỗi kết nối MySQL (XAMPP): " . $e->getMessage() . ". Hãy đảm bảo MySQL trong XAMPP đang chạy trên cổng {$port} với tài khoản root.");
+        }
+    }
+
+    private function initMysqlTables() {
+        // Table 1: documents
+        $this->pdo->exec("
+            CREATE TABLE IF NOT EXISTS `documents` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `title` VARCHAR(255) NOT NULL,
+                `content` LONGTEXT NOT NULL,
+                `word_count` INT DEFAULT 0,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Table 2: document_chunks
+        $this->pdo->exec("
+            CREATE TABLE IF NOT EXISTS `document_chunks` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `document_id` INT NOT NULL,
+                `chunk_index` INT NOT NULL,
+                `content` TEXT NOT NULL,
+                `word_count` INT DEFAULT 0,
+                FOREIGN KEY (`document_id`) REFERENCES `documents` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Table 3: chat_history
+        $this->pdo->exec("
+            CREATE TABLE IF NOT EXISTS `chat_history` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `sender` VARCHAR(50) NOT NULL,
+                `message` TEXT NOT NULL,
+                `sentiment` VARCHAR(50) DEFAULT 'Trung tính',
+                `sentiment_score` FLOAT DEFAULT 0.5,
+                `model_used` VARCHAR(100) DEFAULT 'Offline Simulation',
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ");
+
+        // Seed default chat messages if chat_history is empty
+        $stmt = $this->pdo->query("SELECT COUNT(*) FROM `chat_history`");
+        if ($stmt->fetchColumn() == 0) {
+            $seeds = $this->getDefaultSchema()['chat_history'];
+            $seedStmt = $this->pdo->prepare("
+                INSERT INTO `chat_history` (sender, message, sentiment, sentiment_score, model_used, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ");
+            foreach ($seeds as $chat) {
+                $seedStmt->execute([
+                    $chat['sender'],
+                    $chat['message'],
+                    $chat['sentiment'],
+                    $chat['sentiment_score'],
+                    $chat['model_used'],
+                    $chat['created_at']
+                ]);
+            }
+        }
+    }
+
+    private function initJsonConnection() {
         // Change file extension to json to reflect the database format
         $this->dbFile = str_replace('.sqlite', '.json', DB_PATH);
         
@@ -81,7 +188,12 @@ class Database {
     }
 
     public function save() {
-        if (file_put_contents($this->dbFile, json_encode($this->data, JSON_PRETTY_PRINT), LOCK_EX) === false) {
+        if (defined('DB_TYPE') && DB_TYPE === 'mysql') {
+            return;
+        }
+        // Suggestion 2: Disable pretty print if configured (optional) to save disk space and performance
+        $pretty = (defined('DB_PRETTY_PRINT') && !DB_PRETTY_PRINT) ? 0 : JSON_PRETTY_PRINT;
+        if (file_put_contents($this->dbFile, json_encode($this->data, $pretty), LOCK_EX) === false) {
             throw new Exception("Lỗi hệ thống: Không thể lưu file database.json. Hãy kiểm tra quyền ghi của thư mục.");
         }
     }
@@ -94,22 +206,56 @@ class Database {
     }
 
     public function resetDemoData() {
-        $this->data = $this->getDefaultSchema();
-        $this->lastId = 0;
+        if (defined('DB_TYPE') && DB_TYPE === 'mysql') {
+            $this->pdo->exec("SET FOREIGN_KEY_CHECKS = 0;");
+            $this->pdo->exec("DROP TABLE IF EXISTS `document_chunks`;");
+            $this->pdo->exec("DROP TABLE IF EXISTS `documents`;");
+            $this->pdo->exec("DROP TABLE IF EXISTS `chat_history`;");
+            $this->pdo->exec("SET FOREIGN_KEY_CHECKS = 1;");
+            $this->initMysqlTables();
+            return true;
+        } else {
+            $this->data = $this->getDefaultSchema();
+            $this->lastId = 0;
+            $this->save();
+            return true;
+        }
+    }
+
+    // --- PDO Interface Mimic / Proxy Methods ---
+    public function beginTransaction() {
+        if ($this->pdo) {
+            return $this->pdo->beginTransaction();
+        }
+        return true;
+    }
+
+    public function commit() {
+        if ($this->pdo) {
+            return $this->pdo->commit();
+        }
         $this->save();
         return true;
     }
 
-    // --- PDO Interface Mimic Methods ---
-    public function beginTransaction() { return true; }
-    public function commit() { $this->save(); return true; }
-    public function rollBack() { return true; }
+    public function rollBack() {
+        if ($this->pdo) {
+            return $this->pdo->rollBack();
+        }
+        return true;
+    }
 
     public function lastInsertId() {
+        if ($this->pdo) {
+            return $this->pdo->lastInsertId();
+        }
         return $this->lastId;
     }
 
     public function exec($sql) {
+        if ($this->pdo) {
+            return $this->pdo->exec($sql);
+        }
         if (stripos($sql, 'DELETE FROM chat_history') !== false) {
             // Clear chats but preserve seeds
             $this->data['chat_history'] = array_filter($this->data['chat_history'], function($chat) {
@@ -122,12 +268,18 @@ class Database {
     }
 
     public function query($sql) {
+        if ($this->pdo) {
+            return $this->pdo->query($sql);
+        }
         $stmt = new JSONStatement($this, $sql);
         $stmt->execute();
         return $stmt;
     }
 
     public function prepare($sql) {
+        if ($this->pdo) {
+            return $this->pdo->prepare($sql);
+        }
         return new JSONStatement($this, $sql);
     }
 

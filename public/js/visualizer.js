@@ -25,6 +25,12 @@ class VectorSpaceVisualizer {
         // Colors mapping palette (Neon cyans, purples, emeralds, ambers)
         this.colorPalette = ['#00f0ff', '#a855f7', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'];
 
+        // Zoom and Pan state
+        this.scale = 1.0;
+        this.pan = { x: 0, y: 0 };
+        this.isPanning = false;
+        this.panStart = { x: 0, y: 0 };
+
         this.initEvents();
     }
 
@@ -308,20 +314,32 @@ class VectorSpaceVisualizer {
         const h = this.canvas.height;
         this.ctx.clearRect(0, 0, w, h);
 
+        this.ctx.save();
+        // Apply panning and zooming translations
+        this.ctx.translate(this.pan.x, this.pan.y);
+        this.ctx.scale(this.scale, this.scale);
+
         // 1. Draw glowing background grid lines
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
-        this.ctx.lineWidth = 1;
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.012)';
+        this.ctx.lineWidth = 1 / this.scale;
         const gridSpacing = 40;
-        for (let x = 0; x < w; x += gridSpacing) {
+
+        // Render grid lines far beyond bounds to account for panning
+        const startX = -Math.max(2000, Math.abs(this.pan.x)) / this.scale;
+        const endX = (w + Math.max(2000, Math.abs(this.pan.x))) / this.scale;
+        const startY = -Math.max(2000, Math.abs(this.pan.y)) / this.scale;
+        const endY = (h + Math.max(2000, Math.abs(this.pan.y))) / this.scale;
+
+        for (let x = Math.floor(startX / gridSpacing) * gridSpacing; x < endX; x += gridSpacing) {
             this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, h);
+            this.ctx.moveTo(x, startY);
+            this.ctx.lineTo(x, endY);
             this.ctx.stroke();
         }
-        for (let y = 0; y < h; y += gridSpacing) {
+        for (let y = Math.floor(startY / gridSpacing) * gridSpacing; y < endY; y += gridSpacing) {
             this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(w, y);
+            this.ctx.moveTo(startX, y);
+            this.ctx.lineTo(endX, y);
             this.ctx.stroke();
         }
 
@@ -337,7 +355,7 @@ class VectorSpaceVisualizer {
             
             // Neon cyan glowing line proportional to score
             this.ctx.strokeStyle = `rgba(6, 182, 212, ${0.1 + link.score * 0.75})`;
-            this.ctx.lineWidth = 1 + link.score * 3;
+            this.ctx.lineWidth = (1 + link.score * 3) / this.scale; // keep line readable on zoom
             
             this.ctx.shadowBlur = 5 * link.score;
             this.ctx.shadowColor = 'var(--neon-cyan)';
@@ -356,9 +374,9 @@ class VectorSpaceVisualizer {
             if (node === this.hoveredNode) {
                 this.ctx.save();
                 this.ctx.beginPath();
-                this.ctx.arc(node.x, node.y, node.radius + 6, 0, Math.PI * 2);
+                this.ctx.arc(node.x, node.y, node.radius + 6 / this.scale, 0, Math.PI * 2);
                 this.ctx.strokeStyle = node.color;
-                this.ctx.lineWidth = 1.5;
+                this.ctx.lineWidth = 1.5 / this.scale;
                 this.ctx.shadowBlur = 10;
                 this.ctx.shadowColor = node.color;
                 this.ctx.stroke();
@@ -381,28 +399,40 @@ class VectorSpaceVisualizer {
 
             // Render indices inside nodes for identification
             if (node.radius > 9 && !node.isQuery) {
-                this.ctx.font = 'bold 9px var(--font-body)';
+                this.ctx.font = `bold ${Math.max(6, Math.floor(9 / this.scale))}px var(--font-body)`;
                 this.ctx.fillStyle = '#030712';
                 this.ctx.textAlign = 'center';
                 this.ctx.textBaseline = 'middle';
                 this.ctx.fillText(node.chunkIndex + 1, node.x, node.y);
             }
         });
+
+        this.ctx.restore();
     }
 
     /**
-     * Mouse listeners for drags and hovers
+     * Mouse listeners for drags, hovers, zooming, and panning
      */
     initEvents() {
         if (!this.canvas) return;
-        // Set coordinates
+        // Set coordinates with scale/pan translations (world coords)
         const setMousePos = (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            this.mousePos.x = e.clientX - rect.left;
-            this.mousePos.y = e.clientY - rect.top;
+            const screenX = e.clientX - rect.left;
+            const screenY = e.clientY - rect.top;
+            
+            this.mousePos.x = (screenX - this.pan.x) / this.scale;
+            this.mousePos.y = (screenY - this.pan.y) / this.scale;
         };
 
         this.canvas.addEventListener('mousemove', (e) => {
+            // Panning action takes priority
+            if (this.isPanning) {
+                this.pan.x = e.clientX - this.panStart.x;
+                this.pan.y = e.clientY - this.panStart.y;
+                return;
+            }
+
             setMousePos(e);
             
             // Drag action
@@ -440,6 +470,7 @@ class VectorSpaceVisualizer {
             setMousePos(e);
             
             // Check if clicked inside a node
+            let clickedNode = null;
             for (let i = this.nodes.length - 1; i >= 0; i--) {
                 const node = this.nodes[i];
                 const dx = this.mousePos.x - node.x;
@@ -447,12 +478,21 @@ class VectorSpaceVisualizer {
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
                 if (dist < node.radius + 4) {
-                    this.draggedNode = node;
-                    node.isDragging = true;
-                    node.vx = 0;
-                    node.vy = 0;
+                    clickedNode = node;
                     break;
                 }
+            }
+
+            if (clickedNode) {
+                this.draggedNode = clickedNode;
+                clickedNode.isDragging = true;
+                clickedNode.vx = 0;
+                clickedNode.vy = 0;
+            } else {
+                // Start panning
+                this.isPanning = true;
+                this.panStart.x = e.clientX - this.pan.x;
+                this.panStart.y = e.clientY - this.pan.y;
             }
         });
 
@@ -461,6 +501,7 @@ class VectorSpaceVisualizer {
                 this.draggedNode.isDragging = false;
                 this.draggedNode = null;
             }
+            this.isPanning = false;
         });
 
         this.canvas.addEventListener('mouseleave', () => {
@@ -468,8 +509,33 @@ class VectorSpaceVisualizer {
                 this.draggedNode.isDragging = false;
                 this.draggedNode = null;
             }
+            this.isPanning = false;
             this.hoveredNode = null;
             this.onNodeUnhover();
+        });
+
+        // Mouse Wheel Zoom
+        this.canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = this.canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const zoomIntensity = 0.05;
+            const wheel = e.deltaY < 0 ? 1 : -1;
+            const zoomFactor = Math.exp(wheel * zoomIntensity);
+
+            const worldX = (mouseX - this.pan.x) / this.scale;
+            const worldY = (mouseY - this.pan.y) / this.scale;
+
+            this.scale = Math.min(Math.max(0.3, this.scale * zoomFactor), 4.0);
+
+            this.pan.x = mouseX - worldX * this.scale;
+            this.pan.y = mouseY - worldY * this.scale;
+            
+            // Dispatch dynamic zoom event to notify UI
+            const event = new CustomEvent('canvasZoomed', { detail: { scale: this.scale } });
+            window.dispatchEvent(event);
         });
 
         window.addEventListener('resize', () => this.resize());

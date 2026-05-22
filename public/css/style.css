@@ -1213,3 +1213,60 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* --- DATABASE FALLBACK WARNING BANNER --- */
+.db-fallback-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(244, 63, 94, 0.06));
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: 12px;
+    padding: 14px 24px;
+    margin-bottom: 28px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.25), 0 0 15px rgba(245, 158, 11, 0.05);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    animation: bannerSlideDown 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.db-fallback-banner .banner-icon {
+    font-size: 22px;
+    filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.6));
+    animation: bannerIconPulse 2s infinite ease-in-out;
+    flex-shrink: 0;
+}
+
+.db-fallback-banner .banner-text {
+    font-size: 13px;
+    color: #fde047;
+    line-height: 1.5;
+    font-family: var(--font-body);
+}
+
+.db-fallback-banner .banner-text strong {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+@keyframes bannerSlideDown {
+    from {
+        transform: translateY(-20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes bannerIconPulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.9;
+    }
+    50% {
+        transform: scale(1.15);
+        opacity: 1;
+    }
+}
