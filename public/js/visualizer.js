@@ -1,0 +1,513 @@
+/**
+ * AetherMind HTML5 Canvas Force-Directed Physics Graph Visualizer
+ */
+
+class VectorSpaceVisualizer {
+    constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) return;
+
+        this.ctx = this.canvas.getContext('2d');
+        this.nodes = [];
+        this.links = [];
+        this.draggedNode = null;
+        this.hoveredNode = null;
+        this.queryNode = null;
+        this.animationId = null;
+
+        // Physics constants
+        this.repulsionConstant = 350; // Coulomb constant
+        this.damping = 0.88;          // Friction
+        this.gravity = 0.03;          // Central gravity pull
+        this.springLength = 150;      // Hooke resting length
+        this.mousePos = { x: 0, y: 0 };
+
+        // Colors mapping palette (Neon cyans, purples, emeralds, ambers)
+        this.colorPalette = ['#00f0ff', '#a855f7', '#10b981', '#f59e0b', '#ec4899', '#3b82f6'];
+
+        this.initEvents();
+    }
+
+    /**
+     * Start the canvas rendering loop
+     */
+    start() {
+        this.resize();
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+        }
+        
+        const tick = () => {
+            this.updatePhysics();
+            this.draw();
+            this.animationId = requestAnimationFrame(tick);
+        };
+        tick();
+    }
+
+    /**
+     * Stop loops
+     */
+    stop() {
+        if (this.animationId) {
+            cancelAnimationFrame(this.animationId);
+        }
+    }
+
+    /**
+     * Resize canvas size
+     */
+    resize() {
+        const parent = this.canvas.parentElement;
+        this.canvas.width = parent.clientWidth;
+        this.canvas.height = parent.clientHeight;
+        
+        // Relocate nodes towards center if they are out of bounds after resize
+        this.nodes.forEach(node => {
+            if (node.x < 0 || node.x > this.canvas.width) node.x = Math.random() * this.canvas.width;
+            if (node.y < 0 || node.y > this.canvas.height) node.y = Math.random() * this.canvas.height;
+        });
+    }
+
+    /**
+     * Map document chunks into floating nodes on the coordinate map
+     */
+    loadChunks(chunks, activeDocIds = new Set()) {
+        this.nodes = [];
+        this.links = [];
+        this.queryNode = null;
+
+        const w = this.canvas.width || 800;
+        const h = this.canvas.height || 500;
+
+        // Group chunk nodes by document to alternate color schemes
+        const docColorMap = {};
+        let colorIdx = 0;
+
+        chunks.forEach(chunk => {
+            // Check if document toggle filters out this chunk
+            if (activeDocIds.size > 0 && !activeDocIds.has(parseInt(chunk.document_id))) {
+                return;
+            }
+
+            // Assign color for this document
+            if (!docColorMap.hasOwnProperty(chunk.document_id)) {
+                docColorMap[chunk.document_id] = this.colorPalette[colorIdx % this.colorPalette.length];
+                colorIdx++;
+            }
+
+            // Spawn node at a random circle offset from center
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 80 + Math.random() * 120;
+
+            this.nodes.push({
+                id: chunk.id,
+                chunkIndex: chunk.chunk_index,
+                documentId: chunk.document_id,
+                documentTitle: chunk.document_title,
+                content: chunk.content,
+                
+                // Physics params
+                x: (w / 2) + Math.cos(angle) * radius,
+                y: (h / 2) + Math.sin(angle) * radius,
+                vx: 0,
+                vy: 0,
+                mass: 1.0,
+                radius: 8 + Math.min(6, Math.floor(chunk.word_count / 30)), // radius proportional to word size!
+                color: docColorMap[chunk.document_id],
+                group: chunk.document_id,
+                isDragging: false
+            });
+        });
+
+        this.updateStats();
+    }
+
+    /**
+     * Apply a search query term, spawning a central Query node and dynamic springs
+     */
+    applyQuerySearch(queryText, searchResults) {
+        // 1. Remove previous query node
+        this.nodes = this.nodes.filter(n => !n.isQuery);
+        this.links = [];
+        this.queryNode = null;
+
+        if (!queryText || queryText.trim() === '' || searchResults.length === 0) {
+            this.updateStats();
+            return;
+        }
+
+        const w = this.canvas.width || 800;
+        const h = this.canvas.height || 500;
+
+        // 2. Create White Query Node
+        this.queryNode = {
+            id: 'query-node-' + Date.now(),
+            isQuery: true,
+            content: `Vector truy vấn: "${queryText}"`,
+            documentTitle: 'Vector tìm kiếm đang hoạt động',
+            x: w / 2,
+            y: h / 2,
+            vx: 0,
+            vy: 0,
+            mass: 2.0, // heavier
+            radius: 12,
+            color: '#ffffff',
+            glowColor: '#ffffff',
+            isDragging: false
+        };
+
+        this.nodes.push(this.queryNode);
+
+        // Map results for quick score access
+        const scoreLookup = {};
+        searchResults.forEach(res => {
+            scoreLookup[res.chunk_id] = res.score;
+        });
+
+        // 3. Connect matching chunk nodes to Query node with active springs
+        this.nodes.forEach(node => {
+            if (node.isQuery) return;
+
+            if (scoreLookup.hasOwnProperty(node.id)) {
+                const score = scoreLookup[node.id];
+                
+                // Spring link stiffness proportional to TF-IDF Cosine Similarity score!
+                this.links.push({
+                    source: this.queryNode,
+                    target: node,
+                    stiffness: 0.05 * score, // Stronger matching results pull harder!
+                    score: score
+                });
+            }
+        });
+
+        this.updateStats();
+    }
+
+    /**
+     * Run Euler physics updates
+     */
+    updatePhysics() {
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const len = this.nodes.length;
+
+        // 1. Coulomb Repulsion: Every node repels every other node
+        for (let i = 0; i < len; i++) {
+            const nodeA = this.nodes[i];
+            
+            for (let j = i + 1; j < len; j++) {
+                const nodeB = this.nodes[j];
+
+                const dx = nodeB.x - nodeA.x;
+                const dy = nodeB.y - nodeA.y;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1.0;
+
+                // Repel only within a specific bubble to keep network organized
+                if (dist < 320) {
+                    // Coulomb force equation: force = k * (ma * mb) / r^2
+                    const force = this.repulsionConstant / (dist * dist);
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+
+                    // Apply equal and opposite reaction
+                    if (!nodeA.isDragging && !nodeA.isQuery) {
+                        nodeA.vx -= fx / nodeA.mass;
+                        nodeA.vy -= fy / nodeA.mass;
+                    }
+                    if (!nodeB.isDragging && !nodeB.isQuery) {
+                        nodeB.vx += fx / nodeB.mass;
+                        nodeB.vy += fy / nodeB.mass;
+                    }
+                }
+            }
+
+            // 2. Central Gravity: Pull floating nodes gently to center coordinates
+            if (!nodeA.isDragging && !nodeA.isQuery) {
+                const dx = (w / 2) - nodeA.x;
+                const dy = (h / 2) - nodeA.y;
+                nodeA.vx += dx * this.gravity;
+                nodeA.vy += dy * this.gravity;
+            }
+        }
+
+        // 3. Hooke's Spring Law: Spring connections pull connected nodes
+        this.links.forEach(link => {
+            const s = link.source;
+            const t = link.target;
+
+            const dx = t.x - s.x;
+            const dy = t.y - s.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1.0;
+
+            // Displacement from resting length
+            const displacement = dist - this.springLength;
+            
+            // Spring force: F = -k * displacement
+            const force = link.stiffness * displacement;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+
+            // Pull Target towards Source
+            if (!t.isDragging) {
+                t.vx -= fx / t.mass;
+                t.vy -= fy / t.mass;
+            }
+            // Pull Source towards Target (unless it's the fixed query node)
+            if (!s.isDragging && !s.isQuery) {
+                s.vx += fx / s.mass;
+                s.vy += fy / s.mass;
+            }
+        });
+
+        // 4. Integrate Velocities, Damping, and Bounds limit
+        this.nodes.forEach(node => {
+            if (node.isDragging) return;
+
+            // Apply friction damping
+            node.vx *= this.damping;
+            node.vy *= this.damping;
+
+            // Move position
+            node.x += node.vx;
+            node.y += node.vy;
+
+            // Boundary collisions
+            if (node.x < node.radius) {
+                node.x = node.radius;
+                node.vx *= -0.5;
+            }
+            if (node.x > w - node.radius) {
+                node.x = w - node.radius;
+                node.vx *= -0.5;
+            }
+            if (node.y < node.radius) {
+                node.y = node.radius;
+                node.vy *= -0.5;
+            }
+            if (node.y > h - node.radius) {
+                node.y = h - node.radius;
+                node.vy *= -0.5;
+            }
+        });
+    }
+
+    /**
+     * Render the physics scene on the canvas
+     */
+    draw() {
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        this.ctx.clearRect(0, 0, w, h);
+
+        // 1. Draw glowing background grid lines
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.015)';
+        this.ctx.lineWidth = 1;
+        const gridSpacing = 40;
+        for (let x = 0; x < w; x += gridSpacing) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, h);
+            this.ctx.stroke();
+        }
+        for (let y = 0; y < h; y += gridSpacing) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(w, y);
+            this.ctx.stroke();
+        }
+
+        // 2. Draw connections (links / springs)
+        this.links.forEach(link => {
+            const s = link.source;
+            const t = link.target;
+
+            // Draw line glowing based on cosine similarity score
+            this.ctx.beginPath();
+            this.ctx.moveTo(s.x, s.y);
+            this.ctx.lineTo(t.x, t.y);
+            
+            // Neon cyan glowing line proportional to score
+            this.ctx.strokeStyle = `rgba(6, 182, 212, ${0.1 + link.score * 0.75})`;
+            this.ctx.lineWidth = 1 + link.score * 3;
+            
+            this.ctx.shadowBlur = 5 * link.score;
+            this.ctx.shadowColor = 'var(--neon-cyan)';
+            this.ctx.stroke();
+        });
+        
+        // Reset shadows for node boundaries
+        this.ctx.shadowBlur = 0;
+
+        // 3. Draw nodes
+        this.nodes.forEach(node => {
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+            
+            // If hovered, draw an elegant halo ring
+            if (node === this.hoveredNode) {
+                this.ctx.save();
+                this.ctx.beginPath();
+                this.ctx.arc(node.x, node.y, node.radius + 6, 0, Math.PI * 2);
+                this.ctx.strokeStyle = node.color;
+                this.ctx.lineWidth = 1.5;
+                this.ctx.shadowBlur = 10;
+                this.ctx.shadowColor = node.color;
+                this.ctx.stroke();
+                this.ctx.restore();
+            }
+
+            // Fill circle
+            this.ctx.fillStyle = node.color;
+            this.ctx.save();
+            this.ctx.shadowBlur = node.isQuery ? 15 : 8;
+            this.ctx.shadowColor = node.color;
+            this.ctx.fill();
+            this.ctx.restore();
+
+            // Inner circle highlight core
+            this.ctx.beginPath();
+            this.ctx.arc(node.x, node.y, node.radius * 0.4, 0, Math.PI * 2);
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            this.ctx.fill();
+
+            // Render indices inside nodes for identification
+            if (node.radius > 9 && !node.isQuery) {
+                this.ctx.font = 'bold 9px var(--font-body)';
+                this.ctx.fillStyle = '#030712';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.fillText(node.chunkIndex + 1, node.x, node.y);
+            }
+        });
+    }
+
+    /**
+     * Mouse listeners for drags and hovers
+     */
+    initEvents() {
+        // Set coordinates
+        const setMousePos = (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.mousePos.x = e.clientX - rect.left;
+            this.mousePos.y = e.clientY - rect.top;
+        };
+
+        this.canvas.addEventListener('mousemove', (e) => {
+            setMousePos(e);
+            
+            // Drag action
+            if (this.draggedNode) {
+                this.draggedNode.x = this.mousePos.x;
+                this.draggedNode.y = this.mousePos.y;
+                return;
+            }
+
+            // Hover checks
+            let foundHover = null;
+            for (let i = this.nodes.length - 1; i >= 0; i--) {
+                const node = this.nodes[i];
+                const dx = this.mousePos.x - node.x;
+                const dy = this.mousePos.y - node.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < node.radius + 4) {
+                    foundHover = node;
+                    break;
+                }
+            }
+
+            if (foundHover !== this.hoveredNode) {
+                this.hoveredNode = foundHover;
+                if (foundHover) {
+                    this.onNodeHover(foundHover);
+                } else {
+                    this.onNodeUnhover();
+                }
+            }
+        });
+
+        this.canvas.addEventListener('mousedown', (e) => {
+            setMousePos(e);
+            
+            // Check if clicked inside a node
+            for (let i = this.nodes.length - 1; i >= 0; i--) {
+                const node = this.nodes[i];
+                const dx = this.mousePos.x - node.x;
+                const dy = this.mousePos.y - node.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < node.radius + 4) {
+                    this.draggedNode = node;
+                    node.isDragging = true;
+                    node.vx = 0;
+                    node.vy = 0;
+                    break;
+                }
+            }
+        });
+
+        this.canvas.addEventListener('mouseup', () => {
+            if (this.draggedNode) {
+                this.draggedNode.isDragging = false;
+                this.draggedNode = null;
+            }
+        });
+
+        this.canvas.addEventListener('mouseleave', () => {
+            if (this.draggedNode) {
+                this.draggedNode.isDragging = false;
+                this.draggedNode = null;
+            }
+            this.hoveredNode = null;
+            this.onNodeUnhover();
+        });
+
+        window.addEventListener('resize', () => this.resize());
+    }
+
+    /**
+     * UI trigger when node is hovered
+     */
+    onNodeHover(node) {
+        const inspector = document.getElementById('visualizer-node-inspector');
+        if (!inspector) return;
+
+        if (node.isQuery) {
+            inspector.innerHTML = `
+                <div style="font-weight: 700; color: white; margin-bottom: 4px;">Node truy vấn</div>
+                <div style="font-size: 11px; line-height: 1.4; color: var(--neon-cyan);">${node.content}</div>
+            `;
+            return;
+        }
+
+        const scoreText = node.vx === 0 ? '' : `<div style="color:var(--neon-cyan); font-weight:600; margin-bottom:4px;">Điểm vector: node đang hoạt động</div>`;
+
+        inspector.innerHTML = `
+            <div style="font-weight: 700; color: white; margin-bottom: 2px;">Tài liệu: ${node.documentTitle}</div>
+            <div style="color: #64748b; font-size: 11px; margin-bottom: 6px;">Thứ tự đoạn: ${node.chunkIndex + 1}</div>
+            <div style="font-size: 11px; line-height: 1.4; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;">
+                "${node.content}"
+            </div>
+        `;
+    }
+
+    onNodeUnhover() {
+        const inspector = document.getElementById('visualizer-node-inspector');
+        if (inspector) {
+            inspector.innerHTML = `
+                <div style="text-align: center; color: #64748b; padding: 20px 0; font-style: italic;">
+                    Di chuột lên một node trên Canvas để xem nội dung đoạn văn bản.
+                </div>
+            `;
+        }
+    }
+
+    updateStats() {
+        const statsEl = document.getElementById('visualizer-stats-nodecount');
+        if (statsEl) {
+            statsEl.innerText = `Node: ${this.nodes.length} | Lò xo: ${this.links.length}`;
+        }
+    }
+}
