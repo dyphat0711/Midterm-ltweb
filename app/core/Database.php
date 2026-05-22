@@ -81,7 +81,9 @@ class Database {
     }
 
     public function save() {
-        file_put_contents($this->dbFile, json_encode($this->data, JSON_PRETTY_PRINT));
+        if (file_put_contents($this->dbFile, json_encode($this->data, JSON_PRETTY_PRINT), LOCK_EX) === false) {
+            throw new Exception("Lỗi hệ thống: Không thể lưu file database.json. Hãy kiểm tra quyền ghi của thư mục.");
+        }
     }
 
     public static function getInstance() {
@@ -278,9 +280,9 @@ class JSONStatement {
                 foreach ($joined as $item) {
                     $matched = false;
                     foreach ($this->params as $param) {
-                        $keyword = str_replace('%', '', strtolower($param));
-                        if (empty($keyword) || strlen($keyword) < 2) continue;
-                        if (stripos(strtolower($item->content), $keyword) !== false) {
+                        $keyword = str_replace('%', '', mb_strtolower($param, 'UTF-8'));
+                        if (empty($keyword) || mb_strlen($keyword, 'UTF-8') < 2) continue;
+                        if (mb_strpos(mb_strtolower($item->content, 'UTF-8'), $keyword, 0, 'UTF-8') !== false) {
                             $matched = true;
                             break;
                         }
@@ -316,7 +318,7 @@ class JSONStatement {
             $limit = isset($this->params[0]) ? (int)$this->params[0] : 100;
             // Get last N records
             $chats = $data['chat_history'];
-            $sliced = array_slice($chats, 0, $limit);
+            $sliced = array_slice($chats, -$limit);
             foreach ($sliced as $chat) {
                 $this->results[] = (object)$chat;
             }

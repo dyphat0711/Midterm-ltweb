@@ -32,10 +32,30 @@
 }
 
 /* --- BASE STYLES --- */
+html {
+    scroll-behavior: smooth;
+}
+
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+}
+
+/* --- CUSTOM SCROLLBARS --- */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: rgba(8, 12, 24, 0.8);
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(6, 182, 212, 0.3);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(168, 85, 247, 0.5);
 }
 
 body {
@@ -592,27 +612,31 @@ body {
     background: rgba(255, 255, 255, 0.05);
     border-radius: 6px;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     border: 1px solid var(--glass-border);
 }
 
 .gauge-fill {
     height: 100%;
     width: 50%;
-    background: linear-gradient(to right, var(--neon-rose), var(--neon-amber), var(--neon-emerald));
-    transition: var(--transition-smooth);
+    background: var(--neon-amber);
+    box-shadow: 0 0 8px var(--neon-amber);
+    transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), background 0.3s ease, box-shadow 0.3s ease;
     border-radius: 6px;
 }
 
 .gauge-marker {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 4px;
+    top: -3px;
+    bottom: -3px;
+    width: 6px;
     background: white;
-    box-shadow: 0 0 6px white;
+    box-shadow: 0 0 8px white, 0 0 3px white;
     left: 50%;
-    transition: var(--transition-smooth);
+    border-radius: 3px;
+    transform: translateX(-50%);
+    transition: left 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    z-index: 2;
 }
 
 .sentiment-label {
@@ -1120,4 +1144,72 @@ body {
 .agent-cards-row.disabled {
     pointer-events: none;
     opacity: 0.5;
+}
+
+/* --- RESPONSIVE MEDIA QUERIES --- */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .two-column-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 992px) {
+    .chat-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .ml-sandbox-panel {
+        display: none; /* Hide sandbox on small screens to focus on chat */
+    }
+    .visualizer-workspace {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+    .visualizer-sidebar {
+        display: none;
+    }
+    .visualizer-canvas-container {
+        height: 70vh;
+    }
+}
+
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        padding: 16px;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        border-right: none;
+        border-bottom: 1px solid var(--glass-border);
+    }
+    .brand-section {
+        margin-bottom: 0;
+    }
+    .sidebar-nav {
+        flex-direction: row;
+        gap: 4px;
+    }
+    .nav-item span {
+        display: none; /* Hide text, show only icons on mobile nav */
+    }
+    .nav-item {
+        padding: 10px;
+    }
+    .sidebar-footer {
+        display: none; /* Hide settings btn from mobile header */
+    }
+    .main-content {
+        padding: 20px;
+    }
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
 }

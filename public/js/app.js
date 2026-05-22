@@ -588,6 +588,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (liveSentimentVal) liveSentimentVal.innerText = sentiment.score.toFixed(2);
                 if (liveSentimentMarker) liveSentimentMarker.style.left = `${sentiment.score * 100}%`;
                 
+                if (liveSentimentFill) {
+                    liveSentimentFill.style.width = `${sentiment.score * 100}%`;
+                    if (sentiment.label === 'Tích cực' || sentiment.label === 'Positive') {
+                        liveSentimentFill.style.background = 'var(--neon-emerald)';
+                        liveSentimentFill.style.boxShadow = '0 0 8px var(--neon-emerald)';
+                    } else if (sentiment.label === 'Tiêu cực' || sentiment.label === 'Negative') {
+                        liveSentimentFill.style.background = 'var(--neon-rose)';
+                        liveSentimentFill.style.boxShadow = '0 0 8px var(--neon-rose)';
+                    } else {
+                        liveSentimentFill.style.background = 'var(--neon-amber)';
+                        liveSentimentFill.style.boxShadow = '0 0 8px var(--neon-amber)';
+                    }
+                }
+                
                 if (liveSentimentLbl) {
                     liveSentimentLbl.innerHTML = `<span>${sentiment.emoji}</span> <span>${sentiment.label}</span>`;
                     if (sentiment.label === 'Tích cực' || sentiment.label === 'Positive') {
@@ -737,13 +751,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        function triggerSendMessage() {
+        async function triggerSendMessage() {
             const val = chatInput.value.trim();
             if (!val || tfHelper.isTraining) return;
 
             // Compute keystroke sentiment right before saving!
             const sentiment = tfHelper.analyzeSentiment(val);
             chatInput.value = '';
+            
+            // Dispatch input event to reset the real-time sentiment gauge to neutral
+            chatInput.dispatchEvent(new Event('input'));
 
             // 1. Immediately append user bubble locally (Zero latency)
             appendMessageBubble('user', val, sentiment.label, appSettings.modelMode, new Date().toISOString());
@@ -765,6 +782,15 @@ document.addEventListener('DOMContentLoaded', () => {
             messagesContainer.appendChild(typingBubble);
             scrollChatToBottom();
 
+            // Run client-side Semantic RAG Embeddings if enabled
+            let ragMatches = [];
+            if (appSettings.ragEnabled) {
+                const loaderSpan = typingBubble.querySelector('span:last-child');
+                if (loaderSpan) loaderSpan.innerText = 'Đang nhúng Vector Semantics (USE)...';
+                ragMatches = await rag.search(val);
+                if (loaderSpan) loaderSpan.innerText = thinkingText;
+            }
+
             // 2. Perform backend dispatch request (Gemini proxy / offline mock)
             const payload = {
                 message: val,
@@ -773,6 +799,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 model: appSettings.modelMode,
                 apiKey: appSettings.geminiKey,
                 ragEnabled: appSettings.ragEnabled,
+                ragMatches: ragMatches.slice(0, 5), // Send top 5 matches natively processed by TF.js
                 agent: isCollab ? 'collaboration' : activeAgent
             };
 
@@ -962,7 +989,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        function triggerVectorQuery() {
+        async function triggerVectorQuery() {
             const query = searchInput.value.trim();
             
             if (!query) {
@@ -971,8 +998,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Run client-side RAG ranking
-            const results = rag.search(query);
+            // Show loading text while heavy tensor operations occur
+            if (searchBtn) searchBtn.innerText = 'Đang nhúng Vector...';
+
+            // Run client-side RAG ranking (Awaits async Universal Sentence Encoder)
+            const results = await rag.search(query);
+
+            if (searchBtn) searchBtn.innerText = 'Tìm kiếm Vector';
 
             // Apply springs to Canvas
             visualizer.applyQuerySearch(query, results);

@@ -32,6 +32,7 @@ class VectorSpaceVisualizer {
      * Start the canvas rendering loop
      */
     start() {
+        if (!this.canvas) return;
         this.resize();
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
@@ -49,6 +50,7 @@ class VectorSpaceVisualizer {
      * Stop loops
      */
     stop() {
+        if (!this.canvas) return;
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
         }
@@ -58,6 +60,7 @@ class VectorSpaceVisualizer {
      * Resize canvas size
      */
     resize() {
+        if (!this.canvas) return;
         const parent = this.canvas.parentElement;
         this.canvas.width = parent.clientWidth;
         this.canvas.height = parent.clientHeight;
@@ -73,6 +76,7 @@ class VectorSpaceVisualizer {
      * Map document chunks into floating nodes on the coordinate map
      */
     loadChunks(chunks, activeDocIds = new Set()) {
+        if (!this.canvas) return;
         this.nodes = [];
         this.links = [];
         this.queryNode = null;
@@ -127,6 +131,7 @@ class VectorSpaceVisualizer {
      * Apply a search query term, spawning a central Query node and dynamic springs
      */
     applyQuerySearch(queryText, searchResults) {
+        if (!this.canvas) return;
         // 1. Remove previous query node
         this.nodes = this.nodes.filter(n => !n.isQuery);
         this.links = [];
@@ -189,6 +194,7 @@ class VectorSpaceVisualizer {
      * Run Euler physics updates
      */
     updatePhysics() {
+        if (!this.canvas) return;
         const w = this.canvas.width;
         const h = this.canvas.height;
         const len = this.nodes.length;
@@ -297,6 +303,7 @@ class VectorSpaceVisualizer {
      * Render the physics scene on the canvas
      */
     draw() {
+        if (!this.canvas) return;
         const w = this.canvas.width;
         const h = this.canvas.height;
         this.ctx.clearRect(0, 0, w, h);
@@ -387,6 +394,7 @@ class VectorSpaceVisualizer {
      * Mouse listeners for drags and hovers
      */
     initEvents() {
+        if (!this.canvas) return;
         // Set coordinates
         const setMousePos = (e) => {
             const rect = this.canvas.getBoundingClientRect();
@@ -471,6 +479,7 @@ class VectorSpaceVisualizer {
      * UI trigger when node is hovered
      */
     onNodeHover(node) {
+        if (!this.canvas) return;
         const inspector = document.getElementById('visualizer-node-inspector');
         if (!inspector) return;
 
@@ -494,6 +503,7 @@ class VectorSpaceVisualizer {
     }
 
     onNodeUnhover() {
+        if (!this.canvas) return;
         const inspector = document.getElementById('visualizer-node-inspector');
         if (inspector) {
             inspector.innerHTML = `
@@ -505,6 +515,7 @@ class VectorSpaceVisualizer {
     }
 
     updateStats() {
+        if (!this.canvas) return;
         const statsEl = document.getElementById('visualizer-stats-nodecount');
         if (statsEl) {
             statsEl.innerText = `Node: ${this.nodes.length} | Lò xo: ${this.links.length}`;

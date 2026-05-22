@@ -44,10 +44,23 @@ class ApiController extends Controller {
             // 1. Save user's message to database
             $this->chatModel->save('user', $userMessage, $sentiment, $sentimentScore, $modelMode);
 
-            // 2. Fetch context if RAG is enabled
+            // 2. Process Semantic Context passed from the client-side Universal Sentence Encoder
             $ragPayload = ['text' => '', 'matches' => [], 'citations' => ''];
-            if ($ragEnabled) {
-                $ragPayload = $this->getRagContext($userMessage, 5);
+            if ($ragEnabled && isset($data['ragMatches']) && is_array($data['ragMatches'])) {
+                $ragPayload['matches'] = $data['ragMatches'];
+                
+                // Construct textual context from semantic chunks
+                $contextTexts = [];
+                $docCitations = [];
+                foreach ($data['ragMatches'] as $match) {
+                    $contextTexts[] = "Tài liệu: " . $match['document_title'] . "\nNội dung: " . $match['content'];
+                    $docCitations[] = $match['document_title'];
+                }
+                
+                if (!empty($contextTexts)) {
+                    $ragPayload['text'] = implode("\n\n---\n\n", $contextTexts);
+                    $ragPayload['citations'] = implode(', ', array_unique($docCitations));
+                }
             }
             $ragContext = $ragPayload['text'];
             $ragCitations = $ragPayload['citations'];
@@ -319,7 +332,8 @@ class ApiController extends Controller {
                 $this->json(['success' => false, 'error' => 'Content cannot be empty.'], 400);
             }
 
-            if (str_word_count($content) < 5) {
+            $wordCount = count(preg_split('/\s+/', $content));
+            if ($wordCount < 5) {
                 $this->json(['success' => false, 'error' => 'Content is too short. Provide at least 5 words for useful chunking.'], 400);
             }
 
@@ -429,7 +443,7 @@ class ApiController extends Controller {
      * Compute a local RAG context by doing a keyword-based similarity match against document chunks
      */
     private function getRagContext($query, $topK = 5) {
-        $cacheKey = md5(strtolower(trim($query)) . '|' . $topK);
+        $cacheKey = md5(mb_strtolower(trim($query), 'UTF-8') . '|' . $topK);
         if (session_status() === PHP_SESSION_ACTIVE && isset($_SESSION['rag_cache'][$cacheKey])) {
             return $_SESSION['rag_cache'][$cacheKey];
         }
@@ -443,7 +457,7 @@ class ApiController extends Controller {
         $scored = [];
 
         foreach ($chunks as $chunk) {
-            $content = strtolower($chunk->content);
+            $content = mb_strtolower($chunk->content, 'UTF-8');
             $hits = 0;
             foreach ($tokens as $token) {
                 $hits += substr_count($content, $token);
@@ -495,10 +509,10 @@ class ApiController extends Controller {
     }
 
     private function tokenizeForRag($text) {
-        $parts = preg_split('/[^\p{L}\p{N}]+/u', strtolower($text));
-        $stopWords = ['the', 'and', 'for', 'that', 'this', 'with', 'from', 'của', 'và', 'là', 'có', 'cho', 'một', 'các', 'những', 'trong'];
+        $parts = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text, 'UTF-8'));
+        $stopWords = ['the', 'and', 'for', 'that', 'this', 'with', 'from', 'của', 'và', 'là', 'có', 'cho', 'một', 'các', 'những', 'trong', 'thì', 'mà', 'đã', 'đang', 'sẽ', 'bị', 'được', 'như', 'nhưng', 'cũng', 'để'];
         return array_values(array_unique(array_filter($parts, function($token) use ($stopWords) {
-            return strlen($token) > 2 && !in_array($token, $stopWords);
+            return mb_strlen($token, 'UTF-8') > 1 && !in_array($token, $stopWords);
         })));
     }
 
@@ -506,7 +520,7 @@ class ApiController extends Controller {
      * Return simulated intelligent response when offline
      */
     private function getMockResponse($query, $ragContext = '') {
-        $q = strtolower($query);
+        $q = mb_strtolower($query, 'UTF-8');
         $contextNote = !empty($ragContext) ? "\n\n*Ngữ cảnh RAG truy xuất từ dữ liệu cục bộ:*\n" . substr($ragContext, 0, 300) . "..." : "";
 
         if (strpos($q, 'hello') !== false || strpos($q, 'hi') !== false) {
@@ -581,7 +595,8 @@ class ApiController extends Controller {
         }
 
         $content = $this->extractArticleText($html);
-        if (str_word_count($content) < 30) {
+        $wordCount = ($content !== '') ? count(preg_split('/\s+/', trim($content))) : 0;
+        if ($wordCount < 30) {
             throw new InvalidArgumentException("Khong trich xuat du noi dung tu URL. Trang co the chan crawler, can dang nhap, hoac tai noi dung bang JavaScript.");
         }
 

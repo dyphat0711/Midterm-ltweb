@@ -32,7 +32,7 @@
             
             <div class="sentiment-gauge-container">
                 <span class="sentiment-label" id="live-sentiment-lbl">
-                    <span>Trung tính</span>
+                    <span>😐</span> <span>Trung tính</span>
                 </span>
                 
                 <div class="gauge-track">

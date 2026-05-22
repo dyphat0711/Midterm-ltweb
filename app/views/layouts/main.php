@@ -2,12 +2,27 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title><?php echo isset($title) ? $title . ' | ' . SITE_NAME : SITE_NAME; ?></title>
-    <meta name="description" content="AetherMind: không gian tri thức thông minh với ML trên trình duyệt và API LLM tùy chọn.">
+    <meta name="description" content="AetherMind: Không gian tri thức thông minh với Machine Learning trên trình duyệt và API LLM tùy chọn.">
+    <meta name="keywords" content="AetherMind, AI, RAG, Machine Learning, TensorFlow.js, PHP MVC, Intelligent Web App">
+    <meta name="author" content="AetherMind Team">
+    
+    <!-- Open Graph Meta Tags -->
+    <meta property="og:title" content="<?php echo isset($title) ? $title . ' | ' . SITE_NAME : SITE_NAME; ?>">
+    <meta property="og:description" content="AetherMind: Không gian tri thức thông minh với Machine Learning trên trình duyệt.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="<?php echo URL_ROOT; ?>">
+    
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo isset($title) ? $title . ' | ' . SITE_NAME : SITE_NAME; ?>">
+    <meta name="twitter:description" content="AetherMind: Không gian tri thức thông minh với Machine Learning trên trình duyệt.">
+
     <link rel="stylesheet" href="<?php echo URL_ROOT; ?>/css/style.css">
     <!-- Thu vien TensorFlow.js tu CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/universal-sentence-encoder@1.3.3/dist/universal-sentence-encoder.min.js"></script>
     <!-- Thu vien PDF.js de doc tai lieu PDF tren trinh duyet -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
 </head>
@@ -29,8 +44,8 @@
 
             <nav class="sidebar-nav">
                 <!-- Trang hien tai duoc danh dau dua tren title -->
-                <a href="<?php echo URL_ROOT; ?>/" class="nav-item <?php echo ($title === 'Dashboard' || $title === 'Bảng điều khiển') ? 'active' : ''; ?>" id="nav-dashboard">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <a href="<?php echo URL_ROOT; ?>/" class="nav-item <?php echo ($title === 'Dashboard' || $title === 'Bảng điều khiển') ? 'active' : ''; ?>" id="nav-dashboard" aria-label="Đến trang bảng điều khiển">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="3" y="3" width="7" height="9"></rect>
                         <rect x="14" y="3" width="7" height="5"></rect>
                         <rect x="14" y="12" width="7" height="9"></rect>
@@ -39,15 +54,15 @@
                     <span>Bảng điều khiển</span>
                 </a>
                 
-                <a href="<?php echo URL_ROOT; ?>/chat" class="nav-item <?php echo ($title === 'Intelligent Workspace' || $title === 'Không gian AI') ? 'active' : ''; ?>" id="nav-chat">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <a href="<?php echo URL_ROOT; ?>/chat" class="nav-item <?php echo ($title === 'Intelligent Workspace' || $title === 'Không gian AI') ? 'active' : ''; ?>" id="nav-chat" aria-label="Mở không gian AI">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                     </svg>
                     <span>Không gian AI</span>
                 </a>
                 
-                <a href="<?php echo URL_ROOT; ?>/visualizer" class="nav-item <?php echo ($title === 'Vector Space Visualizer' || $title === 'Không gian vector') ? 'active' : ''; ?>" id="nav-visualizer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <a href="<?php echo URL_ROOT; ?>/visualizer" class="nav-item <?php echo ($title === 'Vector Space Visualizer' || $title === 'Không gian vector') ? 'active' : ''; ?>" id="nav-visualizer" aria-label="Mở không gian Vector">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="2" y1="12" x2="22" y2="12"></line>
                         <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
@@ -57,8 +72,8 @@
             </nav>
 
             <div class="sidebar-footer">
-                <button class="settings-btn" id="open-settings-btn">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button class="settings-btn" id="open-settings-btn" aria-label="Mở bảng cài đặt hệ thống">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <circle cx="12" cy="12" r="3"></circle>
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
@@ -90,8 +105,8 @@
                     </svg>
                     <span>Cấu hình hệ thống</span>
                 </h3>
-                <button class="modal-close" id="close-settings-btn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button class="modal-close" id="close-settings-btn" aria-label="Đóng cài đặt">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>

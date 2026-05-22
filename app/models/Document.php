@@ -10,8 +10,9 @@ class Document extends Model {
     public function create($title, $content) {
         $this->db->beginTransaction();
         try {
-            // Count words in complete document
-            $wordCount = str_word_count($content);
+            // Count words in complete document (Unicode safe)
+            $trimmed = trim($content);
+            $wordCount = ($trimmed === '') ? 0 : count(preg_split('/\s+/', $trimmed));
 
             // 1. Insert parent document record
             $stmt = $this->db->prepare("
@@ -31,7 +32,8 @@ class Document extends Model {
             ");
 
             foreach ($chunks as $index => $chunkContent) {
-                $chunkWordCount = str_word_count($chunkContent);
+                $trimmedChunk = trim($chunkContent);
+                $chunkWordCount = ($trimmedChunk === '') ? 0 : count(preg_split('/\s+/', $trimmedChunk));
                 $chunkStmt->execute([$documentId, $index, $chunkContent, $chunkWordCount]);
             }
 
